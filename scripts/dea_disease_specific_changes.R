@@ -10,8 +10,8 @@ set.seed(0)
 
 # args
 p <- arg_parser("DESeq2 DEA per cell type")
-p <- add_argument(p, "--input", help = "input pseudobulk.h5ad", required = TRUE)
-p <- add_argument(p, "--outdir", help = "output root dir", default = "results/disease_specific_changes/dea")
+p <- add_argument(p, "--input", help = "input pseudobulk.h5ad")
+p <- add_argument(p, "--outdir", help = "output root dir", default = "../results/disease_specific_changes/dea")
 argv <- parse_args(p)
 
 input  <- argv$input
@@ -36,12 +36,15 @@ comparisons <- list(
   c("UC", "CD")
 )
 
-celltypes <- unique(sce$`annotation:coarse`)
+celltypes <- unique(colData(sce)$annotation.coarse)
+
+print(paste("Found cell types:", paste(celltypes, collapse = ", ")))
 
 for (ct in celltypes) {
-  sce_ct <- sce[, sce$`annotation:coarse` == ct, drop = FALSE]
+  sce_ct <- sce[, colData(sce)$annotation.coarse == ct, drop = FALSE]
 
   for (cmp in comparisons) {
+    print(paste("Processing", ct, paste(cmp, collapse = " vs ")))
     cond1 <- cmp[[1]]
     cond2 <- cmp[[2]]
 
@@ -54,14 +57,13 @@ for (ct in celltypes) {
       colData   = as.data.frame(colData(sub)),
       design    = ~ dataset + condition
     )
-    dds <- DESeq(dds, quiet = TRUE)
-    res <- results(dds, contrast = c("condition", cond1, cond2))
-    res_df <- as.data.frame(res)
-    res_df$gene <- rownames(res_df)
+    dds <- estimateSizeFactors(dds)
+    dds <- DESeq(dds)
+    res <- results(dds)
 
     dir <- file.path(outdir, paste0(sanitize(ct), "_", cond1, "vs", cond2))
     dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-    write.table(res_df, file = file.path(dir, "results.tsv"),
-                sep = "\t", quote = FALSE, row.names = FALSE)
+    write.table(res, file = file.path(dir, "results.tsv"),
+                sep = "\t", quote = FALSE, row.names = TRUE)
   }
 }
