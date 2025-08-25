@@ -93,7 +93,7 @@ def main():
     parser.add_argument(
         "--groupby",
         nargs="*",
-        default=["dataset", "sample", "annotation:coarse"],
+        default=["dataset", "sample", "condition", "annotation:coarse"],
         help="obs columns to group by",
     )
     args = parser.parse_args()
