@@ -11,7 +11,7 @@ set.seed(0)
 # args
 p <- arg_parser("DESeq2 DEA per cell type")
 p <- add_argument(p, "--input", help = "input pseudobulk.h5ad")
-p <- add_argument(p, "--outdir", help = "output root dir", default = "../results/disease_specific_changes/dea")
+p <- add_argument(p, "--outdir", help = "output root dir", default = "../../results/disease_specific_changes/dea")
 argv <- parse_args(p)
 
 input  <- argv$input
