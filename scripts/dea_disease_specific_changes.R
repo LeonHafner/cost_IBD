@@ -17,53 +17,48 @@ argv <- parse_args(p)
 input  <- argv$input
 outdir <- argv$outdir
 
-# io
+# load counts and make integers
 sce <- read_h5ad(input, to = "SingleCellExperiment")
-assays(sce)$counts <- round(assays(sce)$X)  # ensure integers for DESeq2
+assays(sce)$counts <- round(assays(sce)$X)
 
-# simple helpers
-sanitize <- function(x) gsub("[^A-Za-z0-9._-]+", "_", x)
-
-# expect these columns to exist in colData(sce):
-# dataset, sample, condition, annotation:coarse
+# factors
 cd <- as.data.frame(colData(sce))
 cd$condition <- factor(cd$condition, levels = c("HC", "UC", "CD"))
 colData(sce) <- S4Vectors::DataFrame(cd)
 
-comparisons <- list(
-  c("UC", "HC"),
-  c("CD", "HC"),
-  c("UC", "CD")
-)
-
+sanitize <- function(x) gsub("[^A-Za-z0-9._-]+", "_", x)
+comparisons <- list(c("CD","UC"), c("HC","CD"), c("HC","UC"))
 celltypes <- unique(colData(sce)$annotation.coarse)
 
-print(paste("Found cell types:", paste(celltypes, collapse = ", ")))
-
 for (ct in celltypes) {
+  # subset only by cell type; keep all conditions
   sce_ct <- sce[, colData(sce)$annotation.coarse == ct, drop = FALSE]
 
+  dds <- DESeqDataSetFromMatrix(
+    countData = assays(sce_ct)$counts,
+    colData   = as.data.frame(colData(sce_ct)),
+    design    = ~ dataset + condition
+  )
+  dds <- estimateSizeFactors(dds)
+  dds <- DESeq(dds)
+
   for (cmp in comparisons) {
-    print(paste("Processing", ct, paste(cmp, collapse = " vs ")))
-    cond1 <- cmp[[1]]
-    cond2 <- cmp[[2]]
+    cond1 <- cmp[[1]]; cond2 <- cmp[[2]]
+    res <- results(dds, contrast = c("condition", cond1, cond2))
 
-    keep <- sce_ct$condition %in% c(cond1, cond2)
-    sub  <- sce_ct[, keep, drop = FALSE]
-    sub$condition <- factor(sub$condition, levels = c(cond2, cond1))  # base = cond2
+    # convert to data.frame and add gene column
+    res_df <- as.data.frame(res)
+    res_df$gene <- rownames(res_df)
+    res_df <- res_df[, c("gene", setdiff(colnames(res_df), "gene"))]
 
-    dds <- DESeqDataSetFromMatrix(
-      countData = assays(sub)$counts,
-      colData   = as.data.frame(colData(sub)),
-      design    = ~ dataset + condition
-    )
-    dds <- estimateSizeFactors(dds)
-    dds <- DESeq(dds)
-    res <- results(dds)
+    # add significance column
+    res_df$significant <- ifelse(is.na(res_df$padj), NA, res_df$padj < 0.05)
 
     dir <- file.path(outdir, paste0(sanitize(ct), "_", cond1, "vs", cond2))
     dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-    write.table(res, file = file.path(dir, "results.tsv"),
-                sep = "\t", quote = FALSE, row.names = TRUE)
+    write.table(res_df,
+      file = file.path(dir, "results.tsv"),
+      sep = "\t", quote = FALSE, row.names = FALSE
+    )
   }
 }
